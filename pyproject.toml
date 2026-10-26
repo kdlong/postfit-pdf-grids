@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "postfit-pdf-grids"
+version = "0.1.0"
+description = "LHAPDF grids for Hessian PDF sets constrained by a postfit covariance"
+readme = "README.md"
+requires-python = ">=3.10"
+# LHAPDF with its Python bindings is also required; it is not installable from PyPI
+dependencies = ["numpy", "h5py"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+make-postfit-pdf-grids = "postfit_pdf_grids.cli:make_grids"
+print-postfit-pdf-covariance = "postfit_pdf_grids.cli:print_covariance"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
