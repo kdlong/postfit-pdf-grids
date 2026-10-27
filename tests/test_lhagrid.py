@@ -50,6 +50,12 @@ def test_read_members(asymmetric_set):
     np.testing.assert_array_equal(values[:, 2], member2)
 
 
+def test_read_members_formatting(symmetric_set):
+    """Members of this set write the knots with different exponent formatting."""
+    subgrids, values = lhagrid.read_members(symmetric_set, [0, 1])
+    assert values.shape == (sum(s.size for s in subgrids), 2)
+
+
 def test_write_roundtrip(asymmetric_set, tmp_path):
     subgrids, values = lhagrid.read_member(
         lhagrid.member_path(lhagrid.set_path(asymmetric_set), 0)

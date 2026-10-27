@@ -4,8 +4,9 @@ Build LHAPDF grids for a Hessian PDF set constrained by a fit. Given the postfit
 covariance and pulls of the PDF nuisance parameters, it writes a new symmetric Hessian
 LHAPDF set whose central member and uncertainties reflect the fit.
 
-With $M$ the matrix of (scaled, symmetrized) Hessian differences $f_i - f_0$ on the
-grid knots, $p$ the pulls and $C = V \Lambda V^T$ the covariance:
+With $D$ the member differences $f_j - f_0$ on the grid knots, $W$ the member weights
+defining the fit parameters, $s$ the scale, $p$ the pulls and $C = V \Lambda V^T$ the
+covariance, the parameter templates are $M = s\,D W^T$ and
 
 - postfit central: $f_0 + M p$
 - postfit members: $f_0 + M p + M V \sqrt{\Lambda}$
@@ -18,30 +19,34 @@ pip install -e .
 
 LHAPDF with its Python bindings must be installed separately.
 
-## Input: the postfit covariance file
+## Input: the postfit PDF file
 
-An HDF5 file, written with `postfit_pdf_grids.write_covariance_file`:
+An HDF5 file written by the fit framework (in WRemnants by
+`scripts/pdf/write_postfit_pdf_covariance.py`), or with
+`postfit_pdf_grids.write_covariance_file`. The file is self-describing: how each
+fit parameter maps onto the PDF members is stored in it, so no conventions of the fit
+framework are needed here.
 
 | Name | Kind | Content |
 |---|---|---|
 | `covariance` | dataset `(n, n)` | postfit covariance of the PDF parameters |
 | `pulls` | dataset `(n,)` | postfit parameter values |
 | `labels` | dataset `(n,)` | parameter names (bookkeeping only) |
+| `member_weights` | dataset `(n, m)` | $W$: the template of parameter $i$ is $s \sum_j W_{ij} (f_j - f_0)$ for members $j = 1..m$ |
+| `format_version` | attribute | currently 1; files with another version are rejected |
 | `pdf_name` | attribute | LHAPDF name of the prefit set |
-| `pdf_scale` | attribute | factor the prefit Hessian uncertainties were scaled by in the fit |
-| `pdf_symm` | attribute | `quadratic` or `average` for asymmetric sets; absent for symmetric sets |
+| `pdf_scale` | attribute | $s$, applied to all templates (e.g. a prefit uncertainty inflation) |
 
 Extra attributes (e.g. provenance) are kept as metadata.
 
-**Parameter order.** The parameters must follow the Hessian eigenvector order of the
-set. Asymmetric members $(2k-1, 2k)$ are treated as $(\mathrm{down}_k, \mathrm{up}_k)$
-and symmetrized as:
+`postfit_pdf_grids.weights` builds $W$ for the common cases. For asymmetric sets
+members $(2k-1, 2k)$ are taken as $(\mathrm{down}_k, \mathrm{up}_k)$:
 
-| Set / method | Parameters | Definition |
+| Case | Parameters | Template |
 |---|---|---|
-| symmetric Hessian | $1, \dots, n$ | $f_k - f_0$ |
-| `average` | $\mathrm{avg}_1, \dots, \mathrm{avg}_n$ | $(\mathrm{up}_k - \mathrm{down}_k)/2$ |
-| `quadratic` | $\mathrm{avg}_1, \mathrm{diff}_1, \mathrm{avg}_2, \dots$ | $\mathrm{diff}_k = \tfrac{\sqrt{3}}{2}(\mathrm{up}_k + \mathrm{down}_k)$ |
+| `symmetric_weights` | $1, \dots, m$ | $f_k - f_0$ |
+| `asymmetric_weights(m, "average")` | $\mathrm{avg}_1, \dots, \mathrm{avg}_{m/2}$ | $(\mathrm{up}_k - \mathrm{down}_k)/2$ |
+| `asymmetric_weights(m, "quadratic")` | $\mathrm{avg}_1, \mathrm{diff}_1, \mathrm{avg}_2, \dots$ | $\mathrm{diff}_k = \tfrac{\sqrt{3}}{2}(\mathrm{up}_k + \mathrm{down}_k)$ |
 
 ## Usage
 
@@ -57,9 +62,10 @@ From Python:
 
 ```python
 from postfit_pdf_grids import PostfitPdf
+from postfit_pdf_grids.weights import asymmetric_weights
 
 postfit = PostfitPdf(
-    "MSHT20nnlo_as118", covariance, pulls, scale=1.0, symmetrization="average"
+    "MSHT20nnlo_as118", covariance, pulls, asymmetric_weights(64, "average")
 )
 postfit.write("grids/", "MSHT20nnlo_as118_myfit", lhaid=900000)
 ```

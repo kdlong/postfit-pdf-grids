@@ -1,3 +1,4 @@
+import h5py
 import lhapdf
 import numpy as np
 import pytest
@@ -5,6 +6,7 @@ import pytest
 from postfit_pdf_grids import PostfitPdf, read_covariance_file, write_covariance_file
 from postfit_pdf_grids.cli import make_grids
 from postfit_pdf_grids.evaluate import members_xfxq
+from postfit_pdf_grids.weights import asymmetric_weights, symmetric_weights
 
 FLAVOURS = ("g", "u", "dbar", "c", "uv")
 # Includes Q just below the MSHT20 charm (1.4 GeV) and bottom (4.75 GeV) thresholds
@@ -23,7 +25,9 @@ def hessian_diffs(set_name, flavour, x=X, q=Q):
 def test_unconstrained_asymmetric(asymmetric_set, lhapdf_tmp_path, method):
     """With unit covariance and zero pulls the postfit set reproduces the symmetrized prefit."""
     n = 64 if method == "quadratic" else 32
-    postfit = PostfitPdf(asymmetric_set, np.eye(n), np.zeros(n), symmetrization=method)
+    postfit = PostfitPdf(
+        asymmetric_set, np.eye(n), np.zeros(n), asymmetric_weights(64, method)
+    )
     set_name = f"test_unconstrained_{method}"
     postfit.write(lhapdf_tmp_path, set_name, 999000)
 
@@ -55,9 +59,9 @@ def test_constrained_symmetric(symmetric_set, lhapdf_tmp_path):
     scale = 1.5
 
     set_name = "test_constrained_symmetric"
-    PostfitPdf(symmetric_set, covariance, pulls, scale=scale).write(
-        lhapdf_tmp_path, set_name, 999001
-    )
+    PostfitPdf(
+        symmetric_set, covariance, pulls, symmetric_weights(n), scale=scale
+    ).write(lhapdf_tmp_path, set_name, 999001)
 
     # Extrapolation below the grid is not linear in the knot values
     in_grid = Q >= float(lhapdf.getPDFSet(symmetric_set).get_entry("QMin"))
@@ -86,14 +90,14 @@ def test_covariance_file_and_cli(asymmetric_set, lhapdf_tmp_path):
         0.5 * np.eye(n),
         np.full(n, 0.1),
         labels,
+        asymmetric_weights(64, "average"),
         asymmetric_set,
         pdf_scale=2.0,
-        pdf_symm="average",
         command="test",
     )
     content = read_covariance_file(path)
-    assert content["pdf_symm"] == "average"
     assert content["pdf_scale"] == 2.0
+    assert content["member_weights"].shape == (n, 64)
     assert list(content["labels"]) == labels
     assert content["metadata"] == {"command": "test"}
 
@@ -105,18 +109,18 @@ def test_covariance_file_and_cli(asymmetric_set, lhapdf_tmp_path):
     assert "Produced by the command" in new_set.description
 
 
-def test_symmetric_file_without_symmetrization(symmetric_set, tmp_path):
-    n = lhapdf.getPDFSet(symmetric_set).errorInfo.nmemCore
-    path = tmp_path / "cov.hdf5"
-    write_covariance_file(
-        path, np.eye(n), np.zeros(n), [f"pdf{i}" for i in range(n)], symmetric_set
-    )
-    assert read_covariance_file(path)["pdf_symm"] is None
-    assert PostfitPdf.from_file(path).symmetrization is None
+def test_old_format_rejected(tmp_path):
+    path = tmp_path / "old.hdf5"
+    with h5py.File(path, "w") as f:
+        f.create_dataset("covariance", data=np.eye(2))
+        f.attrs["pdf_name"] = "test"
+    with pytest.raises(ValueError, match="format version"):
+        read_covariance_file(path)
 
 
 def test_shape_validation(asymmetric_set):
+    weights = asymmetric_weights(64, "average")
     with pytest.raises(ValueError):
-        PostfitPdf(asymmetric_set, np.eye(64), np.zeros(64), symmetrization="average")
-    with pytest.raises(ValueError):
-        PostfitPdf(asymmetric_set, np.eye(32), np.zeros(32))
+        PostfitPdf(asymmetric_set, np.eye(64), np.zeros(64), weights)
+    with pytest.raises(ValueError, match="has 64"):
+        PostfitPdf(asymmetric_set, np.eye(32), np.zeros(32), np.zeros((32, 70)))

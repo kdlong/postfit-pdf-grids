@@ -4,7 +4,6 @@ import sys
 
 import numpy as np
 
-from postfit_pdf_grids import symmetrize
 from postfit_pdf_grids.covariance import read_covariance_file
 from postfit_pdf_grids.postfit import PostfitPdf
 
@@ -53,12 +52,6 @@ def make_grids(argv=None):
         "-n", "--setName", default=None, help="Set name, overriding the default"
     )
     parser.add_argument(
-        "--symmetrizePdf",
-        choices=symmetrize.METHODS,
-        default=None,
-        help="Symmetrization for asymmetric Hessian sets, overriding the input file",
-    )
-    parser.add_argument(
         "--description",
         default=None,
         help="SetDesc of the new set; the command is appended",
@@ -69,7 +62,7 @@ def make_grids(argv=None):
     args = parser.parse_args(argv)
     _setup_logging(args.verbose)
 
-    postfit = PostfitPdf.from_file(args.input, symmetrization=args.symmetrizePdf)
+    postfit = PostfitPdf.from_file(args.input)
     set_name = args.setName or default_set_name(
         postfit.pdf_name, args.fitLabel, postfit.scale
     )
@@ -91,10 +84,10 @@ def print_covariance(argv=None):
     content = read_covariance_file(args.input)
     print(f"pdf_name: {content['pdf_name']}")
     print(f"pdf_scale: {content['pdf_scale']}")
-    print(f"pdf_symm: {content['pdf_symm']}")
     for key, value in content["metadata"].items():
         print(f"{key}: {value}")
     print("labels:", content["labels"])
     print("pulls:", content["pulls"])
     print("covariance shape:", content["covariance"].shape)
     print("covariance diagonal:", np.diag(content["covariance"]))
+    print("member_weights shape:", content["member_weights"].shape)

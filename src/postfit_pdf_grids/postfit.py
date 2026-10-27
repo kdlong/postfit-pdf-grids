@@ -4,7 +4,7 @@ import os
 import lhapdf
 import numpy as np
 
-from postfit_pdf_grids import lhagrid, symmetrize
+from postfit_pdf_grids import lhagrid
 from postfit_pdf_grids.covariance import read_covariance_file
 
 logger = logging.getLogger(__name__)
@@ -15,49 +15,57 @@ CONF_LEVEL_1SIGMA = 68.26894921370858
 
 class PostfitPdf:
     """
-    A Hessian PDF set constrained by a postfit covariance and pulls of its parameters.
+    A PDF set constrained by a postfit covariance and pulls of parameters defined
+    as linear combinations of its Hessian members.
 
+    M = scale * D @ W^T, with D the member differences f_j - f_0 on the grid knots
     Postfit central = central + M @ pulls
     Postfit members = postfit central + M @ V sqrt(lambda), for C = V diag(lambda) V^T
-    where M holds the (scaled, symmetrized) Hessian differences in parameter order.
     """
 
     def __init__(
-        self, pdf_name, covariance, pulls, labels=None, scale=1.0, symmetrization=None
+        self, pdf_name, covariance, pulls, member_weights, labels=None, scale=1.0
     ):
-        error_info = lhapdf.getPDFSet(pdf_name).errorInfo
-        if error_info.coreType not in ("hessian", "symmhessian"):
-            raise ValueError(
-                f"Unsupported PDF error type {error_info.coreType} for {pdf_name}, only Hessian sets are supported"
-            )
         self.pdf_name = pdf_name
-        self.symmetric = error_info.coreType == "symmhessian"
-        self.n_hessian = error_info.nmemCore
         self.scale = scale
-        self.symmetrization = None if self.symmetric else symmetrization
-
-        n = symmetrize.n_parameters(self.n_hessian, self.symmetric, symmetrization)
         self.covariance = np.asarray(covariance)
         self.pulls = np.asarray(pulls)
+        self.member_weights = np.asarray(member_weights)
         self.labels = None if labels is None else np.asarray(labels)
-        if self.covariance.shape != (n, n) or self.pulls.shape != (n,):
+
+        n = len(self.pulls)
+        if (
+            self.covariance.shape != (n, n)
+            or self.member_weights.ndim != 2
+            or self.member_weights.shape[0] != n
+        ):
             raise ValueError(
-                f"Expected a ({n}, {n}) covariance and {n} pulls for {pdf_name}, found {self.covariance.shape} and {self.pulls.shape}"
+                f"Inconsistent shapes: covariance {self.covariance.shape}, pulls {self.pulls.shape}, member_weights {self.member_weights.shape}"
             )
         if self.labels is not None and self.labels.shape != (n,):
             raise ValueError(f"Expected {n} labels, found {self.labels.shape}")
 
+        pdf_set = lhapdf.getPDFSet(pdf_name)
+        n_members = self.member_weights.shape[1]
+        if n_members > pdf_set.size - 1:
+            raise ValueError(
+                f"member_weights use {n_members} members but {pdf_name} has {pdf_set.size - 1}"
+            )
+        if n_members != pdf_set.errorInfo.nmemCore:
+            logger.warning(
+                f"member_weights use {n_members} members, {pdf_name} has {pdf_set.errorInfo.nmemCore} core error members"
+            )
+
     @classmethod
-    def from_file(cls, path, symmetrization=None):
-        """Load from a covariance file; symmetrization overrides the stored method."""
+    def from_file(cls, path):
         content = read_covariance_file(path)
         return cls(
             content["pdf_name"],
             content["covariance"],
             content["pulls"],
+            content["member_weights"],
             labels=content["labels"],
             scale=content["pdf_scale"],
-            symmetrization=symmetrization or content["pdf_symm"],
         )
 
     def hessian_matrix(self):
@@ -65,15 +73,11 @@ class PostfitPdf:
         Read the prefit set and return (subgrids, central, M), with M of shape
         (n_knots, n_parameters).
         """
-        subgrids, values = lhagrid.read_members(
-            self.pdf_name, range(self.n_hessian + 1)
-        )
+        n_members = self.member_weights.shape[1]
+        subgrids, values = lhagrid.read_members(self.pdf_name, range(n_members + 1))
         central = values[:, 0]
-        matrix = (values[:, 1:] - central[:, None]) * self.scale
-        if not self.symmetric:
-            logger.info(f"Applying {self.symmetrization} symmetrization")
-            matrix = symmetrize.symmetrize_hessian(matrix, self.symmetrization)
-        return subgrids, central, matrix
+        diffs = values[:, 1:] - central[:, None]
+        return subgrids, central, self.scale * diffs @ self.member_weights.T
 
     def postfit_members(self):
         """Returns (subgrids, postfit central, postfit Hessian members of shape (n_knots, n_parameters))."""

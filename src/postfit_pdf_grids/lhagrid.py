@@ -39,6 +39,16 @@ class Subgrid:
     def size(self):
         return int(np.prod(self.shape))
 
+    def same_knots(self, other):
+        """Same knots as other, regardless of number formatting in the files."""
+        return all(
+            np.array_equal(np.array(a.split(), float), np.array(b.split(), float))
+            for a, b in zip(
+                (self.x_line, self.q_line, self.flavour_line),
+                (other.x_line, other.q_line, other.flavour_line),
+            )
+        )
+
 
 def set_path(set_name):
     """Path prefix of an installed set, e.g. ``/path/to/NAME/NAME``."""
@@ -90,7 +100,9 @@ def read_members(set_name, members):
         member_subgrids, vals = read_member(member_path(prefix, member))
         if subgrids is None:
             subgrids = member_subgrids
-        elif member_subgrids != subgrids:
+        elif len(member_subgrids) != len(subgrids) or not all(
+            a.same_knots(b) for a, b in zip(member_subgrids, subgrids)
+        ):
             raise ValueError(
                 f"Member {member} of {set_name} has a different grid layout from member {members[0]}"
             )
