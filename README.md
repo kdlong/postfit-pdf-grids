@@ -14,9 +14,10 @@ covariance, the parameter templates are $M = s\,D W^T$ and
 ## Installation
 
 ```bash
-pip install -e .
+pip install -r requirements.txt
 ```
 
+This installs the package in editable mode with its dependencies and pytest.
 LHAPDF with its Python bindings must be installed separately.
 
 ## Input: the postfit PDF file

@@ -1,0 +1,6 @@
+# pip install -r requirements.txt
+# LHAPDF with its Python bindings is also required; it is not installable from PyPI
+numpy
+h5py
+pytest
+-e .
